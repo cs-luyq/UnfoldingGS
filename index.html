@@ -57,10 +57,12 @@
     <section class="scene-section container" aria-labelledby="scene-title">
       <div class="scene-heading"><h2 id="scene-title">Progressive level-of-detail representation</h2><div class="scene-tools"><div class="scene-selector" role="group" aria-label="Choose a scene"><button type="button" data-scene="truck" class="is-active" aria-pressed="true">Truck</button><button type="button" data-scene="bonsai" aria-pressed="false">Bonsai</button></div><span class="scene-dataset" id="scene-dataset">Truck · Tanks &amp; Temples</span></div></div>
       <div class="scene-viewer">
-        <div class="scene-images">
+        <div class="scene-images" data-state="ready" aria-busy="false" role="group" aria-label="Gaussian structure and rendered view">
           <figure class="scene-image scene-structure"><span class="image-label"><span class="label-dot"></span> 3D Gaussian structure</span><img id="structure-image" src="assets/images/truck-structure-l3.webp" width="979" height="546" alt="Full-detail 3D Gaussian structure of a blue truck" fetchpriority="high"><span class="image-corner">THE REPRESENTATION</span></figure>
           <figure class="scene-image scene-render"><span class="image-label"><span class="label-dot"></span> Rendered view</span><img id="render-image" src="assets/images/truck-render-l3.webp" width="979" height="546" alt="Full-detail rendered view of the Truck scene" fetchpriority="high"><span class="level-badge" id="scene-badge">L3 / Full detail</span></figure>
+          <div class="scene-load-overlay" id="scene-load-overlay" aria-hidden="true" hidden><span class="scene-spinner"></span><span id="scene-load-label"></span><span class="scene-load-help" id="scene-load-help" hidden>Check your connection and try again.</span></div>
         </div>
+        <div class="scene-feedback" id="scene-feedback" data-state="ready"><p class="scene-status" id="scene-announcement" role="status" aria-live="polite" aria-atomic="true">Showing Truck · L3 · 50.7 MB</p><button type="button" id="scene-retry" hidden>Retry</button></div>
         <div class="scene-controls">
           <div class="level-hint"><span class="micro-label">LEVEL OF DETAIL</span><span>Coarsest <span aria-hidden="true">⟶</span> Finest</span></div>
           <div class="lod-selector" role="group" aria-label="Choose a level of detail for the Truck scene">
@@ -72,7 +74,6 @@
         </div>
       </div>
       <div class="scene-caption"><p><strong>LOD visualization.</strong> Gaussian structure and rendered views at four LODs. The model is condensed from L3 to L0 during training; progressive rendering proceeds from L0 to L3.</p><p>Pre-rendered results at each level’s target resolution.</p></div>
-      <p class="sr-only" id="scene-announcement" aria-live="polite"></p>
     </section>
 
     <section id="overview" class="overview section-pad container" aria-labelledby="overview-title">

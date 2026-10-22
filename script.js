@@ -9,17 +9,73 @@
   };
   const structure = document.querySelector('#structure-image');
   const rendering = document.querySelector('#render-image');
+  const sceneImages = document.querySelector('.scene-images');
+  const sceneOverlay = document.querySelector('#scene-load-overlay');
+  const sceneLoadLabel = document.querySelector('#scene-load-label');
+  const sceneLoadHelp = document.querySelector('#scene-load-help');
+  const sceneFeedback = document.querySelector('#scene-feedback');
+  const sceneAnnouncement = document.querySelector('#scene-announcement');
+  const sceneRetry = document.querySelector('#scene-retry');
   const lodButtons = [...document.querySelectorAll('[data-lod]')];
   const sceneButtons = [...document.querySelectorAll('[data-scene]')];
-  const preloadedScenes = new Set();
+  const imageCache = new Map();
   let selectedScene = 'truck';
   let selectedLod = 3;
+  let sceneRequest = 0;
 
-  function renderScene() {
-    const scene = scenes[selectedScene];
+  function setSceneState(state, message) {
+    sceneImages.dataset.state = state;
+    sceneImages.setAttribute('aria-busy', String(state === 'loading'));
+    sceneFeedback.dataset.state = state;
+    sceneAnnouncement.textContent = message;
+    sceneLoadLabel.textContent = message;
+    sceneOverlay.hidden = state === 'ready';
+    sceneLoadHelp.hidden = state !== 'error';
+    sceneRetry.hidden = state !== 'error';
+    for (const button of [...sceneButtons, ...lodButtons]) {
+      button.classList.toggle('is-pending', state === 'loading' && button.getAttribute('aria-pressed') === 'true');
+    }
+  }
+
+  // Cache successful decoded images and share in-flight requests. Failed entries
+  // are removed so Retry can make a fresh request.
+  function loadSceneImage(source, priority) {
+    const cached = imageCache.get(source);
+    if (cached) {
+      if (priority === 'high') cached.image.fetchPriority = 'high';
+      return cached.promise;
+    }
+    const image = new Image();
+    image.fetchPriority = priority;
+    image.decoding = 'async';
+    const promise = new Promise((resolve, reject) => {
+      image.onload = async () => {
+        try {
+          if (typeof image.decode === 'function') await image.decode();
+          resolve(image);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      image.onerror = () => reject(new Error('Scene image could not be loaded'));
+    });
+    const entry = { image, promise };
+    imageCache.set(source, entry);
+    promise.catch(() => {
+      if (imageCache.get(source) === entry) imageCache.delete(source);
+    });
+    image.src = source;
+    return promise;
+  }
+
+  async function renderScene() {
+    const request = ++sceneRequest;
+    const key = selectedScene;
+    const scene = scenes[key];
     const level = selectedLod;
+    const target = `${scene.name} · L${level}`;
     sceneButtons.forEach(button => {
-      const active = button.dataset.scene === selectedScene;
+      const active = button.dataset.scene === key;
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-pressed', String(active));
     });
@@ -33,28 +89,51 @@
       button.querySelector('.lod-size').replaceChildren(document.createTextNode(`${scene.sizes[index]} `), unit);
       button.querySelector('.lod-track i').style.width = `${100 * scene.sizes[index] / scene.sizes[3]}%`;
     });
-    document.querySelector('.scene-images').style.setProperty('--scene-aspect', `${scene.width} / ${scene.height}`);
+    sceneImages.style.setProperty('--scene-aspect', `${scene.width} / ${scene.height}`);
     document.querySelector('.lod-selector').setAttribute('aria-label', `Choose a level of detail for the ${scene.name} scene`);
-    structure.src = `assets/images/${selectedScene}-structure-l${level}.webp`;
-    structure.alt = `Level ${level} 3D Gaussian structure of the ${scene.name} scene, ${sceneNames[level].toLowerCase()}`;
-    rendering.src = `assets/images/${selectedScene}-render-l${level}.webp`;
-    rendering.alt = `Level ${level} rendered view of the ${scene.name} scene, ${scene.sizes[level]} ${scene.unit}, at its target resolution`;
     for (const image of [structure, rendering]) {
       image.width = scene.width;
       image.height = scene.height;
     }
     document.querySelector('#scene-dataset').textContent = `${scene.name} · ${scene.description}`;
     document.querySelector('#scene-badge').textContent = `L${level} / ${sceneNames[level]}`;
-    document.querySelector('#scene-announcement').textContent = `Showing ${scene.name}, L${level}, ${sceneNames[level]}, ${scene.sizes[level]} ${scene.unit}.`;
+    setSceneState('loading', `Loading ${target}…`);
+
+    const structureSource = `assets/images/${key}-structure-l${level}.webp`;
+    const renderSource = `assets/images/${key}-render-l${level}.webp`;
+    try {
+      await Promise.all([
+        loadSceneImage(structureSource, 'high'),
+        loadSceneImage(renderSource, 'high')
+      ]);
+      if (request !== sceneRequest) return;
+
+      // Both views are ready before either is revealed. The request counter
+      // prevents an older scene or LOD from overwriting a newer selection.
+      structure.src = structureSource;
+      structure.alt = `Level ${level} 3D Gaussian structure of the ${scene.name} scene, ${sceneNames[level].toLowerCase()}`;
+      rendering.src = renderSource;
+      rendering.alt = `Level ${level} rendered view of the ${scene.name} scene, ${scene.sizes[level]} ${scene.unit}, at its target resolution`;
+      await Promise.all([structure, rendering].map(image => (
+        typeof image.decode === 'function' ? image.decode() : Promise.resolve()
+      )));
+      if (request !== sceneRequest) return;
+      setSceneState('ready', `Showing ${target} · ${scene.sizes[level]} ${scene.unit}`);
+
+      // Background loading starts after the requested pair is visible.
+      setTimeout(() => {
+        if (request === sceneRequest) preloadScene(key);
+      }, 200);
+    } catch (_) {
+      if (request !== sceneRequest) return;
+      setSceneState('error', `Couldn’t load ${target}.`);
+    }
   }
 
   function preloadScene(key) {
-    if (preloadedScenes.has(key)) return;
-    preloadedScenes.add(key);
     for (let level = 0; level < 4; level += 1) {
       for (const type of ['structure', 'render']) {
-        const image = new Image();
-        image.src = `assets/images/${key}-${type}-l${level}.webp`;
+        loadSceneImage(`assets/images/${key}-${type}-l${level}.webp`, 'low').catch(() => {});
       }
     }
   }
@@ -70,12 +149,10 @@
     button.addEventListener('click', () => {
       selectedScene = button.dataset.scene;
       renderScene();
-      preloadScene(selectedScene);
     });
   });
 
-  // Only preload a scene after it has been selected, keeping the first load small.
-  window.addEventListener('load', () => preloadScene(selectedScene), { once: true });
+  sceneRetry.addEventListener('click', renderScene);
   renderScene();
 
   const data = window.UNFOLDING_RESULTS;
